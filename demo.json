@@ -1,0 +1,15 @@
+{
+  "address": "0x13F2b2EE57e04e9A7CCd7BD95a0F80879d281952",
+  "host": "0xaba6bd6d973d17bf53f1616c1f2f7309763f2711",
+  "slug": "winter-shock",
+  "players": [
+    "0x0ba434a1494b7d73c6c722c040f716b7c74d8b2e",
+    "0x319f8a8bf5d6d4002a1bf1bf7ba2fca5eca7e771"
+  ],
+  "hashes": {
+    "opened": "0x788fd0de81b0703b03bcfca1904933016b7aaafccffca2035bb62606a4029e01",
+    "charted": "0x82f79acfeeb97ca7f7a67a7459edeca79d62fe502d9d946739629a3e2e72e3bb",
+    "missed": "0x5ddf21da73199068809839501a1bbc63238e7f997040abeabf9812dcab3e06a1",
+    "replay": "0xfecf44aec644da848c49e66718e39d42691708a3dc115b700cdcd7cc7fb8638d"
+  }
+}

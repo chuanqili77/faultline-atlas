@@ -120,3 +120,16 @@ class ExpeditionTest(unittest.TestCase):
         self.assertEqual(self.app.get_expedition_result(self.editor, "atlas", self.other), "")
         self.assertEqual(self.app.get_expedition_result(self.editor, "atlas", self.player), result)
         self.assertEqual(json.loads(self.app.get_expedition(self.editor, "atlas"))["status"], "OPEN")
+
+    def test_passport_accumulates_across_distinct_expeditions(self):
+        self.open()
+        self.app.open_expedition("aftershock", "Aftershock", "test2,test1")
+        self.message.sender_address = self.player
+        for slug, guesses in [("atlas", ("N6", "N4")), ("aftershock", ("S1", "N6"))]:
+            for index, guess in enumerate(guesses):
+                self.app.plot(self.editor, slug, index, guess)
+        self.assertEqual(json.loads(self.app.get_passport(self.editor, self.player)), {
+            "completed":["atlas", "aftershock"], "played":4, "stamps":3,
+        })
+        self.assertEqual(json.loads(self.app.get_expedition_result(self.editor, "atlas", self.player))["correct"], 2)
+        self.assertEqual(json.loads(self.app.get_expedition_result(self.editor, "aftershock", self.player))["correct"], 1)

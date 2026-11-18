@@ -9,20 +9,20 @@
 <body>
 <header class="mast">
   <a class="brand" href="./"><span aria-hidden="true">◎</span> Faultline Atlas</a>
-  <nav><a href="#play">Play</a><a href="#host">Host a round</a><a id="contract">Studionet ↗</a></nav>
+  <nav><a href="#play">Play</a><a href="#host">Host an expedition</a><a id="contract">Studionet ↗</a></nav>
 </header>
 <main>
   <section class="intro">
-    <div><p class="eyebrow">THE OPEN-BOOK EARTHQUAKE ATLAS</p><h1>Where did the<br>Earth <em>move?</em></h1></div>
-    <p>Read the seismic clues, pick one sector and plot your answer. Every charted epicenter earns a stamp in your on-chain field passport.</p>
+    <div><p class="eyebrow">GLOBAL SEISMIC FIELD EXPEDITION</p><h1>Where did the<br>Earth <em>move?</em></h1></div>
+    <p>Follow a trail of reviewed earthquakes. Plot each epicenter, stamp your field passport and compare a completed expedition against the USGS catalog.</p>
   </section>
   <section id="play" class="desk" aria-labelledby="round-title">
     <article class="chart">
       <div class="chart-header">
-        <div><p id="round-label" class="eyebrow">FIELD CHART</p><h2 id="round-title">Load a round</h2><a id="round-proof" hidden>Round opening transaction ↗</a></div>
-        <button id="share" type="button" disabled>Copy round link</button>
+        <div><p id="round-label" class="eyebrow">FIELD CHART</p><h2 id="round-title">Load an expedition</h2><a id="round-proof" hidden>Expedition opening transaction ↗</a></div>
+        <button id="share" type="button" disabled>Copy expedition link</button>
       </div>
-      <dl class="clues">
+      <div id="trail" class="trail" aria-label="Expedition checkpoints"></div><dl class="clues">
         <div><dt>UTC DATE</dt><dd id="date">—</dd></div>
         <div><dt>MAGNITUDE</dt><dd id="magnitude">—</dd></div>
         <div><dt>DEPTH</dt><dd id="depth">—</dd></div>
@@ -32,38 +32,44 @@
         <div id="sectors" class="sectors" role="group" aria-label="Choose a map sector"></div>
         <span id="epicenter" class="epicenter" hidden aria-hidden="true"></span>
       </div>
-      <div class="map-footer"><span id="selection">Pick one of the 12 sectors.</span><button id="submit" class="solid" disabled>Lock my sector</button></div>
+      <div class="map-footer"><span id="selection">Pick one of the 12 sectors.</span><div class="demo-buttons"><button id="submit" class="solid" disabled>Lock my sector</button><button id="next" hidden>Next checkpoint →</button></div></div>
     </article>
     <aside class="field">
       <p class="eyebrow">FIELD PASSPORT</p>
       <div id="stamp" class="stamp" aria-hidden="true">◎</div>
       <h2 id="result">Awaiting a plot</h2>
-      <p id="explain">Choose a sector on the grid. Your wallet gets one plot per round.</p>
-      <p id="score" class="score"></p>
+      <p id="explain">Connect a wallet to start an expedition or inspect a public passport.</p>
+      <p id="score" class="score"></p><ol id="history" class="history"></ol><button id="connect" type="button">Use my wallet</button>
       <div class="proof"><a id="source" hidden>USGS event record ↗</a><a id="transaction" hidden>Transaction ↗</a></div>
       <section id="examples" hidden>
         <h3>Replay the demo</h3>
-        <p>Inspect two finalized plots without a wallet.</p>
-        <div class="demo-buttons"><button id="win">Charted</button><button id="miss">Missed</button></div>
+        <p>Inspect two finished player expeditions without a wallet.</p>
+        <div class="demo-buttons"><button id="win">Perfect route</button><button id="miss">Mixed route</button></div>
       </section>
     </aside>
   </section>
-  <p id="status" class="status" role="status">Loading published round…</p>
+  <p id="status" class="status" role="status">Loading published expedition…</p>
+  <section id="results" class="results" hidden>
+    <div class="chart-header"><div><p class="eyebrow">FINALIZED EXPEDITION RESULT</p><h2 id="result-title"></h2></div><button id="share-result">Copy result link</button></div>
+    <p id="result-summary"></p>
+    <ol id="result-rounds"></ol>
+  </section>
   <section id="host" class="host">
-    <div><p class="eyebrow">FOR FACILITATORS</p><h2>Open a field round.</h2><p>Pick a reviewed <a href="https://earthquake.usgs.gov/earthquakes/search/">USGS catalog</a> event. Validators independently fetch it and agree on the clues and sector. Share the round link with your group.</p></div>
+    <div><p class="eyebrow">FOR FACILITATORS</p><h2>Open a field expedition.</h2><p>Choose two to five reviewed <a href="https://earthquake.usgs.gov/earthquakes/search/">USGS catalog</a> events. Validators independently fetch each one and agree on the clues and sector. Share the expedition link with your group.</p></div>
     <form id="create">
-      <label>Round key<input id="slug" required minlength="3" maxlength="40" placeholder="e.g. pacific-field-trip"></label>
-      <label>USGS event ID<input id="event" required minlength="4" maxlength="24" placeholder="e.g. us6000jllz"></label>
+      <label>Expedition key<input id="slug" required minlength="3" maxlength="40" placeholder="e.g. pacific-field-trip"></label>
+      <label>Expedition title<input id="title" required maxlength="100" placeholder="Pacific Field Expedition"></label><label>USGS event IDs<input id="event" required minlength="9" maxlength="124" placeholder="us6000m0xl,us6000jllz"></label>
       <button class="solid">Verify and open</button>
     </form>
     <form id="open">
       <label>Host wallet<input id="lookup-host" required pattern="0x[0-9a-fA-F]{40}" placeholder="0x…"></label>
-      <label>Round key<input id="lookup-slug" required minlength="3" maxlength="40" placeholder="e.g. pacific-field-trip"></label>
-      <button>Open an existing round</button>
+      <label>Expedition key<input id="lookup-slug" required minlength="3" maxlength="40" placeholder="e.g. pacific-field-trip"></label>
+      <button>Open an existing expedition</button>
     </form>
   </section>
 </main>
-<footer>Faultline Atlas <span>USGS earthquake catalog · Natural Earth geography · GenLayer Stable Studionet</span></footer>
+<section class="public-lookup"><form id="passport"><label>Public player wallet<input id="player" required pattern="0x[0-9a-fA-F]{40}" placeholder="0x…"></label><button>Read passport</button></form><p>Scores and evidence are on-chain and public. A wallet is not proof of a unique person.</p></section>
+<footer><a href="./archive.html">V1 archive ↗</a> <span>USGS earthquake catalog · Natural Earth geography · GenLayer Stable Studionet</span></footer>
 <script type="module" src="/main.js"></script>
 </body>
 </html>

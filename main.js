@@ -2,59 +2,53 @@ import './style.css'
 import {createClient} from 'genlayer-js'
 import {chain, explorer, reader, read, waitForFinality} from './chain.js'
 import {drawMap} from './map.js'
-import deployment from './deployment.json'
-import demo from './demo.json'
+import deployment from './deployment-v2.json'
+import demo from './demo-v2.json'
 
 const $ = id => document.getElementById(id)
 const {address} = deployment
-const walletPattern = /^0x[0-9a-f]{40}$/i
-const roundPattern = /^[a-z0-9][a-z0-9-]{2,39}$/
-const status = value => { $('status').textContent = value }
 const get = (method, args) => read(address, method, args)
 const txUrl = hash => explorer + '/transactions/' + hash
-let active
-let selection
-let settled
+const walletPattern = /^0x[0-9a-f]{40}$/i
+const slugPattern = /^[a-z0-9][a-z0-9-]{2,39}$/
+const status = value => { $('status').textContent = value }
+const percent = bps => (bps / 100).toLocaleString('en-US', {maximumFractionDigits:2}) + '%'
+const proof = new Map()
+let active, player, progress, index = 0, selection, attempt
 let busy = false
 
 drawMap($('world'))
 $('contract').href = explorer + '/address/' + address
+$('contract').textContent = 'V2 Studionet ↗'
 
-function roundUrl(key) {
+function deepLink(key, subject) {
   const url = new URL(location.href)
-  url.search = new URLSearchParams({host:key[0], round:key[1]})
-  url.hash = 'play'
-  return url.href
+  url.search = new URLSearchParams({host:key[0], expedition:key[1]})
+  if (subject) url.searchParams.set('player', subject)
+  url.hash = subject ? 'results' : 'play'
+  return url
 }
 
-function resetResult() {
-  settled = false
-  $('stamp').className = 'stamp'
-  $('stamp').textContent = '◎'
-  $('result').textContent = 'Awaiting a plot'
-  $('explain').textContent = 'Choose a sector on the grid. Your wallet gets one plot per round.'
-  $('score').textContent = ''
-  $('source').hidden = true
-  $('transaction').hidden = true
-  $('epicenter').hidden = true
-  for (const button of $('sectors').children) button.className = ''
+function matchesDemo() {
+  return active?.key[0] === demo.host && active?.key[1] === demo.slug
 }
 
-function updateControls() {
-  for (const button of document.querySelectorAll('form button, #examples button')) button.disabled = busy
-  for (const button of $('sectors').children) button.disabled = busy || !active
-  $('submit').disabled = busy || !active || !selection || settled
-  $('share').disabled = busy || !active
+function attemptHash(subject, round) {
+  if (matchesDemo()) {
+    const label = demo.players.indexOf(subject)
+    if (label !== -1) return demo.transactions[(label === 0 ? 'a_' : 'b_') + (round === 0 ? 'first' : 'complete')]?.hash
+  }
+  return proof.get([...active.key, subject, round].join('/'))
 }
 
-function select(sector) {
+function pick(sector) {
   selection = sector
   for (const button of $('sectors').children) button.setAttribute('aria-pressed', String(button.dataset.sector === sector))
   $('selection').textContent = sector ? 'Selected sector · ' + sector : 'Pick one of the 12 sectors.'
-  updateControls()
+  controls()
 }
 
-for (const hemisphere of ['N', 'S']) {
+for (const hemisphere of ['N','S']) {
   for (let zone = 1; zone <= 6; zone++) {
     const sector = hemisphere + zone
     const button = document.createElement('button')
@@ -64,73 +58,161 @@ for (const hemisphere of ['N', 'S']) {
     button.dataset.sector = sector
     button.append(label)
     const min = -180 + (zone - 1) * 60
-    button.setAttribute('aria-label', sector + ', ' + (hemisphere === 'N' ? 'north' : 'south') +
-      ', longitude ' + min + ' to ' + (min + 60) + ' degrees')
-    button.addEventListener('click', () => {
-      resetResult()
-      select(sector)
-      status('Sector ' + sector + ' selected. Lock it when you’re ready.')
-    })
+    button.setAttribute('aria-label', sector + ', longitude ' + min + '° to ' + (min + 60) + '°')
+    button.addEventListener('click', () => pick(sector))
     $('sectors').append(button)
   }
 }
 
-async function openRound(host, slug, updateHistory = true) {
-  if (!walletPattern.test(host) || !roundPattern.test(slug)) throw Error('Enter a valid host wallet and round key.')
-  const key = [host.toLowerCase(), slug]
-  const round = await get('get_round', key)
-  if (!round) throw Error('No finalized round exists for this host and key.')
-  active = key
-  resetResult()
-  select(null)
-  if (updateHistory) history.replaceState(null, '', roundUrl(key))
-  $('lookup-host').value = key[0]
-  $('lookup-slug').value = slug
-  $('round-title').textContent = slug.replaceAll('-', ' ')
-  $('round-label').textContent = 'FIELD CHART · HOST ' + key[0].slice(0, 7) + '…' + key[0].slice(-4)
-  $('round-label').title = key[0]
-  $('date').textContent = new Intl.DateTimeFormat('en-GB', {dateStyle:'medium', timeZone:'UTC'}).format(round.time)
-  $('magnitude').textContent = (round.magnitude_tenths / 10).toFixed(1)
-  $('depth').textContent = (round.depth_tenths / 10).toFixed(1) + ' km'
-  const demoRound = key[0] === demo.host && slug === demo.slug
-  $('examples').hidden = !demoRound
-  $('round-proof').hidden = !demoRound
-  if (demoRound) $('round-proof').href = txUrl(demo.hashes.opened)
-  status('Round ready. Pick a sector or replay a finalized example.')
+function controls() {
+  for (const button of document.querySelectorAll('form button, #examples button, #trail button, #connect, #share-result')) {
+    button.disabled = busy
+  }
+  for (const button of $('sectors').children) button.disabled = busy || !active || Boolean(attempt)
+  $('submit').disabled = busy || !active || !selection || Boolean(attempt)
+  $('next').disabled = busy
+  $('share').disabled = busy || !active
 }
 
-async function showPlot(player, hash) {
-  const [result, passport] = await Promise.all([
-    get('get_attempt', [...active, player]), get('get_passport', [active[0], player]),
+function placeLink(event) {
+  return 'https://earthquake.usgs.gov/earthquakes/eventpage/' + event.event + '/executive'
+}
+
+function renderTrail() {
+  $('trail').replaceChildren(...Array.from({length:active.total}, (_, round) => {
+    const button = document.createElement('button')
+    button.textContent = 'Checkpoint ' + (round + 1) + (round < (progress?.played ?? 0) ? ' ✓' : '')
+    if (round === index) button.setAttribute('aria-current','step')
+    button.addEventListener('click', () => run(async () => {
+      if (round > (progress?.played ?? 0)) throw Error('Complete the current checkpoint before moving forward.')
+      await showCheckpoint(round)
+    }))
+    return button
+  }))
+}
+
+async function showCheckpoint(round) {
+  index = round
+  const [event, answer] = await Promise.all([
+    get('get_expedition_event', [...active.key, round]),
+    player ? get('get_attempt', [...active.key, player, round]) : null,
   ])
-  if (!result || !passport) throw Error('No finalized plot is available for this player.')
-  const item = result.evidence
-  resetResult()
-  select(result.guess)
-  settled = true
-  const marker = $('epicenter')
-  marker.style.left = ((item.lon_milli + 180000) / 3600) + '%'
-  marker.style.top = ((90000 - item.lat_milli) / 1800) + '%'
-  marker.hidden = false
-  for (const button of $('sectors').children) {
-    if (button.dataset.sector === item.sector) button.className = 'correct'
-    else if (button.dataset.sector === result.guess) button.className = 'incorrect'
+  if (!event) throw Error('Checkpoint evidence is unavailable.')
+  attempt = answer
+  pick(answer?.guess)
+  renderTrail()
+  $('date').textContent = new Intl.DateTimeFormat('en-GB',{dateStyle:'medium',timeZone:'UTC'}).format(event.time)
+  $('magnitude').textContent = (event.magnitude_tenths / 10).toFixed(1)
+  $('depth').textContent = (event.depth_tenths / 10).toFixed(1) + ' km'
+  $('stamp').className = 'stamp'
+  $('stamp').textContent = '◎'
+  $('epicenter').hidden = true
+  $('source').hidden = true
+  $('transaction').hidden = true
+  $('next').hidden = !answer || round + 1 >= active.total
+  for (const button of $('sectors').children) button.className = ''
+  if (!answer) {
+    $('result').textContent = 'Checkpoint ' + (round + 1) + ' of ' + active.total
+    $('explain').textContent = 'Use the seismic clues to choose the epicenter sector.'
+    return
   }
-  $('stamp').classList.add(result.correct ? 'win' : 'loss')
-  $('stamp').textContent = result.correct ? '✓' : '×'
-  $('result').textContent = result.correct ? 'Epicenter charted' : 'Off the fault'
-  $('explain').textContent = item.place + ' · ' + item.sector + '. Your plot: ' + result.guess + '.'
-  $('score').textContent = passport.stamps + ' stamp(s) · ' + passport.played + ' plot(s)'
-  $('source').href = 'https://earthquake.usgs.gov/earthquakes/eventpage/' + item.event + '/executive'
+  $('stamp').classList.add(answer.correct ? 'win' : 'loss')
+  $('stamp').textContent = answer.correct ? '✓' : '×'
+  $('result').textContent = answer.correct ? 'Epicenter charted' : 'Off the fault'
+  $('explain').textContent = event.place + ' · actual ' + event.sector + ' · your plot ' + answer.guess +
+    ' · ' + (event.lat_milli / 1000) + '°, ' + (event.lon_milli / 1000) + '°'
+  $('source').href = placeLink(event)
   $('source').hidden = false
+  const hash = attemptHash(player, round)
   if (hash) {
     $('transaction').href = txUrl(hash)
     $('transaction').hidden = false
   }
-  status('Finalized plot for ' + player + '.')
-  updateControls()
+  const marker = $('epicenter')
+  marker.style.left = ((event.lon_milli + 180000) / 3600) + '%'
+  marker.style.top = ((90000 - event.lat_milli) / 1800) + '%'
+  marker.hidden = false
+  for (const button of $('sectors').children) {
+    if (button.dataset.sector === event.sector) button.className = 'correct'
+    else if (button.dataset.sector === answer.guess) button.className = 'incorrect'
+  }
 }
 
+async function showPlayer(subject, requestedRound) {
+  const [state, passport, result] = await Promise.all([
+    get('get_player_progress',[...active.key,subject]),
+    get('get_passport',[active.key[0],subject]),
+    get('get_expedition_result',[...active.key,subject]),
+  ])
+  player = subject
+  progress = state
+  $('player').value = subject
+  const stamps = passport?.stamps ?? 0
+  const played = passport?.played ?? 0
+  $('score').textContent = stamps + ' correct / ' + played + ' host events · ' +
+    percent(played ? Math.floor(10000 * stamps / played) : 0) + ' · ' + stamps + ' stamps · ' +
+    (passport?.completed.length ?? 0) + ' completed expeditions'
+  $('history').replaceChildren(...(passport?.completed ?? []).map(slug => {
+    const item = document.createElement('li')
+    const link = document.createElement('a')
+    link.href = deepLink([active.key[0],slug],subject)
+    link.textContent = slug.replaceAll('-', ' ')
+    item.append(link)
+    return item
+  }))
+  $('results').hidden = !result
+  if (result) {
+    $('result-title').textContent = result.title
+    $('result-summary').textContent = result.status + ' · ' + result.total + ' events · ' + result.correct +
+      ' correct · ' + result.wrong + ' incorrect · ' + percent(result.accuracy_bps) + ' · ' + subject
+    $('result-rounds').replaceChildren(...result.rounds.map(({observation:event, attempt:answer}, round) => {
+      const item = document.createElement('li')
+      item.textContent = event.place + ' · ' + event.event + ' · your plot ' + answer.guess +
+        ' · actual ' + event.sector + ' · ' + (answer.correct ? 'Correct' : 'Incorrect')
+      const source = document.createElement('a')
+      source.href = placeLink(event)
+      source.textContent = 'USGS ↗'
+      item.append(source)
+      const hash = attemptHash(subject, round)
+      if (hash) {
+        const tx = document.createElement('a')
+        tx.href = txUrl(hash)
+        tx.textContent = 'Plot transaction ↗'
+        item.append(tx)
+      }
+      return item
+    }))
+  }
+  await showCheckpoint(requestedRound ?? Math.min(state?.played ?? 0, active.total - 1))
+  status(result ? 'Finalized expedition result loaded.' : 'Finalized player progress loaded.')
+}
+
+async function openExpedition(host, slug, subject, updateHistory = true) {
+  if (!walletPattern.test(host) || !slugPattern.test(slug)) throw Error('Enter a valid host wallet and expedition key.')
+  const key = [host.toLowerCase(), slug]
+  const expedition = await get('get_expedition', key)
+  if (!expedition) throw Error('No finalized expedition exists for that host and key.')
+  active = {key, total:expedition.total}
+  player = null
+  progress = null
+  $('results').hidden = true
+  $('score').textContent = ''
+  $('history').replaceChildren()
+  $('player').value = ''
+  $('lookup-host').value = key[0]
+  $('lookup-slug').value = key[1]
+  $('round-title').textContent = expedition.title
+  $('round-label').textContent = expedition.status + ' · HOST ' + key[0]
+  $('examples').hidden = !matchesDemo()
+  $('round-proof').hidden = !matchesDemo()
+  if (matchesDemo()) $('round-proof').href = txUrl(demo.transactions.open.hash)
+  if (updateHistory) history.replaceState(null, '', deepLink(key,subject))
+  if (subject) await showPlayer(subject)
+  else {
+    await showCheckpoint(0)
+    status('Expedition ready. Open your wallet to play or inspect a public result.')
+  }
+}
 async function wallet() {
   const provider = window.ethereum
   if (!provider) throw Error('Install or open an EIP-1193 browser wallet to sign.')
@@ -165,16 +247,28 @@ async function wallet() {
 }
 
 async function write(signer, method, args) {
-  if (BigInt(await reader.request({method:'eth_gasPrice',params:[]})) !== 0n) {
-    throw Error('Stable Studionet is reporting a nonzero gas price.')
-  }
+  if (BigInt(await reader.request({method:'eth_gasPrice',params:[]})) !== 0n) throw Error('Nonzero gas price on Stable Studionet.')
   status('Review the transaction in your wallet.')
   const hash = await signer.client.writeContract({address, functionName:method, args, value:0n, leaderOnly:false})
   $('transaction').href = txUrl(hash)
   $('transaction').hidden = false
-  status('Submitted. Waiting for consensus.')
+  status('Submitted · awaiting consensus.')
   await waitForFinality(hash, stage => status('Consensus · ' + stage))
   return hash
+}
+
+async function run(action) {
+  if (busy) return
+  busy = true
+  controls()
+  try {
+    await action()
+  } catch (error) {
+    status(error.shortMessage ?? error.message ?? String(error))
+  } finally {
+    busy = false
+    controls()
+  }
 }
 
 function bind(id, event, action) {
@@ -184,54 +278,63 @@ function bind(id, event, action) {
   })
 }
 
-async function run(action) {
-  if (busy) return
-  busy = true
-  updateControls()
-  try {
-    await action()
-  } catch (error) {
-    status(error.shortMessage ?? error.message ?? String(error))
-  } finally {
-    busy = false
-    updateControls()
-  }
-}
-
-bind('share', 'click', async () => {
-  try {
-    await navigator.clipboard.writeText(roundUrl(active))
-    status('Round link copied. Share it with your group.')
-  } catch {
-    status('Share this round with this link: ' + roundUrl(active))
-  }
-})
-bind('submit', 'click', async () => {
-  const signer = await wallet()
-  if (active[0] === signer.account) throw Error('Hosts cannot plot on their own rounds.')
-  const prior = await get('get_attempt', [...active, signer.account])
-  if (prior) return showPlot(signer.account)
-  const hash = await write(signer, 'plot', [...active, selection])
-  await showPlot(signer.account, hash)
-})
-bind('create', 'submit', async () => {
+bind('open','submit',() => openExpedition($('lookup-host').value.trim(),$('lookup-slug').value.trim()))
+bind('create','submit',async () => {
   const slug = $('slug').value.trim()
-  const event = $('event').value.trim()
-  if (!roundPattern.test(slug) || !/^[a-z0-9]{4,24}$/.test(event)) throw Error('Check the round key and USGS event ID.')
+  const title = $('title').value.trim()
+  const ids = $('event').value.split(',').map(id => id.trim())
+  if (!slugPattern.test(slug) || !title || ids.length < 2 || ids.length > 5 ||
+      ids.some(id => !/^[a-z0-9]{4,24}$/.test(id)) || new Set(ids).size !== ids.length) {
+    throw Error('Enter a title, a valid key and two to five distinct event IDs.')
+  }
   const signer = await wallet()
-  const hash = await write(signer, 'open_round', [slug, event])
-  await openRound(signer.account, slug)
-  $('transaction').href = txUrl(hash)
-  $('transaction').hidden = false
-  status('Round opened on-chain. Copy the round link to invite your group.')
+  const hash = await write(signer,'open_expedition',[slug,title,ids.join(',')])
+  await openExpedition(signer.account,slug)
+  $('round-proof').href = txUrl(hash)
+  $('round-proof').hidden = false
+  status('Expedition finalized. Copy the expedition link to share it.')
 })
-bind('open', 'submit', () => openRound($('lookup-host').value.trim(), $('lookup-slug').value.trim()))
-bind('win', 'click', () => showPlot(demo.players[0], demo.hashes.charted))
-bind('miss', 'click', () => showPlot(demo.players[1], demo.hashes.missed))
+bind('connect','click',async () => {
+  if (!active) throw Error('Open an expedition first.')
+  const signer = await wallet()
+  await showPlayer(signer.account)
+})
+bind('submit','click',async () => {
+  const signer = await wallet()
+  if (signer.account === active.key[0]) throw Error('Hosts cannot submit their own expedition.')
+  const state = await get('get_player_progress',[...active.key,signer.account])
+  if ((state?.played ?? 0) !== index) {
+    await showPlayer(signer.account)
+    return status('Loaded your current checkpoint. Select its sector to submit.')
+  }
+  const round = index
+  const hash = await write(signer,'plot',[...active.key,round,selection])
+  proof.set([...active.key,signer.account,round].join('/'),hash)
+  await showPlayer(signer.account,round)
+})
+bind('next','click',() => showCheckpoint(index + 1))
+bind('win','click',() => showPlayer(demo.players[0],0))
+bind('miss','click',() => showPlayer(demo.players[1],0))
+bind('passport','submit',async () => {
+  if (!active) throw Error('Open an expedition first.')
+  const subject = $('player').value.trim().toLowerCase()
+  if (!walletPattern.test(subject)) throw Error('Enter a valid player wallet.')
+  await showPlayer(subject)
+})
+bind('share','click',async () => {
+  await navigator.clipboard.writeText(String(deepLink(active.key)))
+  status('Expedition link copied.')
+})
+bind('share-result','click',async () => {
+  await navigator.clipboard.writeText(String(deepLink(active.key,player)))
+  status('Public result link copied.')
+})
 
 const params = new URLSearchParams(location.search)
-const host = params.get('host') ?? demo.host
-const slug = params.get('round') ?? demo.slug
-if (host && slug) run(() => openRound(host, slug, params.has('round')))
-else status('Open or host a round to start.')
-updateControls()
+if (params.has('round') && !params.has('expedition')) {
+  location.replace('./archive.html' + location.search + location.hash)
+} else {
+  const subject = params.get('player')?.toLowerCase()
+  run(() => openExpedition(params.get('host') ?? demo.host, params.get('expedition') ?? demo.slug,
+    walletPattern.test(subject ?? '') ? subject : undefined, false))
+}

@@ -58,3 +58,14 @@ footer{border-top:1px solid var(--rule);border-bottom:0;font-size:.82rem;color:v
 @media(max-width:760px){.desk,.intro{grid-template-columns:1fr}.host{grid-template-columns:1fr 1fr}.host>div{grid-column:1/-1}.field{padding:1rem}}
 @media(max-width:425px){nav{gap:.45rem;flex-wrap:wrap;justify-content:end}.mast{gap:.4rem}.chart-header,.map-footer{padding:.65rem}.clues div{padding:.55rem}.host{grid-template-columns:1fr}.map-footer{align-items:start}footer{align-items:start}}
 #round-proof{font-size:.75rem;color:var(--muted)}
+.trail{display:flex;gap:.45rem;padding:.7rem 1rem;border-top:1px solid var(--rule);flex-wrap:wrap}
+.trail button{font:600 .77rem ui-monospace,monospace}
+.trail button[aria-current=step]{border-color:var(--lime);color:var(--lime)}
+.history{font-size:.8rem;line-height:1.5;padding-left:1.3rem}
+.results{background:var(--panel);border:1px solid var(--rule);border-radius:8px;margin:0 0 1.4rem;padding:.35rem 1rem}
+.results .chart-header{padding-inline:0}
+.results li{padding:.45rem 0;line-height:1.5;border-top:1px solid var(--rule)}
+.results a{margin-left:.55rem;font-size:.82rem}
+.public-lookup{margin:0 auto;padding:0 4vw 2rem;max-width:1480px;display:grid;gap:.65rem}
+.public-lookup form{max-width:34rem;grid-template-columns:minmax(0,1fr) auto;align-items:end}
+.public-lookup p{font-size:.82rem;color:var(--muted)}
